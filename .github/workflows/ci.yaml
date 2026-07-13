@@ -1,0 +1,54 @@
+name: RAG CI
+
+on: [pull_request]
+
+jobs:
+  performance-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write app env file
+        run: |
+          cat > app/.env << EOF
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL=gemini-3.5-flash
+          FILE_SEARCH_STORE_NAME=${{ secrets.FILE_SEARCH_STORE_NAME }}
+          PORT=8080
+          EOF
+
+      - name: Start RAG app
+        run: docker compose up -d --build app
+
+      - name: Wait for health
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+
+      - name: Run k6 load test
+        run: docker compose --profile perf run --rm k6
+
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write app env file
+        run: |
+          cat > app/.env << EOF
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL=gemini-3.5-flash
+          FILE_SEARCH_STORE_NAME=${{ secrets.FILE_SEARCH_STORE_NAME }}
+          PORT=8080
+          EOF
+
+      - name: Start RAG app
+        run: docker compose up -d --build app
+
+      - name: Wait for health
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+
+      - name: Run DeepEval tests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: docker compose --profile quality run --rm deepeval
